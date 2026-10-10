@@ -255,18 +255,23 @@ static bool publishState() {
 }
 
 // ---- button: cycle AUTO → FORCE OFF → FORCE ON → AUTO ----------------------
-static void buttonPoll() {
+// Returns true when a press changed the mode, so loop() re-evaluates control
+// immediately (no up-to-1 s wait for the next tick → the relay tracks the button).
+static bool buttonPoll() {
   static bool last = true;             // pulled up = released
   static uint32_t lastMs = 0;
   bool now = digitalRead(PIN_BUTTON);
+  bool changed = false;
   if (last && !now && millis() - lastMs > 250) {   // falling edge, debounced
     lastMs = millis();
     g_cfg.mode = (g_cfg.mode == MODE_AUTO)      ? MODE_FORCE_OFF
                : (g_cfg.mode == MODE_FORCE_OFF) ? MODE_FORCE_ON
                                                 : MODE_AUTO;
     Serial.printf("[BTN] mode -> %s\n", modeStr(g_cfg.mode));
+    changed = true;
   }
   last = now;
+  return changed;
 }
 
 // ---- setup -----------------------------------------------------------------
@@ -323,7 +328,7 @@ void loop() {
   agri::OTA::poll();
   agri::WebUI::handle(agri::Network::link_up, agri::Network::have_lease);
   agri::ProvisionAP::poll(agri::Network::have_lease, g_cfg.common.hostname);
-  buttonPoll();
+  bool btnChanged = buttonPoll();
 
   uint32_t now = millis();
 
@@ -340,8 +345,9 @@ void loop() {
 
   if (g_cfg.common.ccm_enabled) sourcesCcmPoll();
 
-  // Control tick ~1 Hz; publish on relay change or on the common interval.
-  if (now - lastCtrlMs >= 1000) {
+  // Control tick ~1 Hz, or immediately after a button press so the relay tracks
+  // the operator without the up-to-1 s tick latency.
+  if (btnChanged || now - lastCtrlMs >= 1000) {
     lastCtrlMs = now;
     bool prev = g_relay;
     controlTick(now);

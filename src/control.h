@@ -152,12 +152,17 @@ inline void controlTick(uint32_t now) {
     else             g_reason = "demand → energize";
   }
 
-  // --- dwell ----------------------------------------------------------------
+  // --- dwell (anti short-cycle) ---------------------------------------------
+  // Dwell bounds the AUTOMATIC hysteresis only. A manual FORCE ON/OFF is an
+  // explicit operator action and switches immediately — waiting 5 min after a
+  // button press reads as "the relay isn't responding". FORCE OFF must be
+  // instant for safety regardless.
+  bool autoMode = (g_cfg.mode == MODE_AUTO);
   if (demand) {
-    if (!g_relay && !min_off_ok) { g_reason = "min-off dwell"; return; }
+    if (autoMode && !g_relay && !min_off_ok) { g_reason = "min-off dwell"; return; }
     relayWrite(true);
   } else {
-    if (g_relay && !min_on_ok) { g_reason = "min-on hold"; return; }
+    if (autoMode && g_relay && !min_on_ok) { g_reason = "min-on hold"; return; }
     relayWrite(false);
   }
 }
