@@ -53,15 +53,23 @@ S1/S2 override the min-on hold — when in doubt, OFF. The relay is de-energized
 
 ## Build / flash
 
+Two link-layer envs share one firmware:
 ```
-pio run                       # build (default = house3: agriha/3 / sensor)
-pio run -t upload             # first flash over USB-C (native USB CDC)
+# PoE / Ethernet (default, preferred in-greenhouse):
+pio run -e m5atoms3-poe -t upload
 
-# house2 node (CO2 bridged via CCM = agriha/2 / sensor_ccm, node=relay_poe_02):
-PLATFORMIO_BUILD_FLAGS="-DHOUSE2" pio run -t upload
+# WiFi (AtomS3 built-in radio, no W5500, USB-C/5V power, for sites without a LAN drop):
+pio run -e m5atoms3-wifi -t upload
+
+# house2 node (CO2 bridged via CCM = agriha/2 / sensor_ccm, node=relay_poe_02) —
+# add -DHOUSE2 to either env:
+PLATFORMIO_BUILD_FLAGS="-DHOUSE2" pio run -e m5atoms3-poe -t upload
 ```
+First flash over USB-C (native USB CDC); later flashes over Ethernet/WiFi OTA.
 > ⚠ When you change the compiled defaults (setDefaults), **stale NVS overrides them**, so erase first:
-> `python -m esptool --port <port> erase_flash`, then `pio run -t upload`. Final per-node config is set on the greenhouse LAN via the WebUI `/config` (persisted to NVS).
+> `python -m esptool --port <port> erase_flash`, then upload. Final per-node config is set on the greenhouse LAN via the WebUI `/config` (persisted to NVS).
+
+**WiFi provisioning (m5atoms3-wifi):** WiFiManager owns the WiFi credentials + a portal. With no creds saved it raises a SoftAP **`agri-relay-setup`** — connect and enter WiFi + MQTT host/port/prefix; afterwards it auto-connects (the portal times out, so control still runs offline = fail-safe OFF). Hold the button (G41) at boot to re-provision. Refine src/thresholds in the WebUI `/config` once connected. PoE is preferred in-greenhouse (EMI); WiFi is the fallback.
 
 - platform = pioarduino fork `#55.03.38` (arduino-esp32 3.x), board = `m5stack-atoms3`, core = `agri-node-poe-core@v0.7.0`.
 - Later flashes over Ethernet via ArduinoOTA (`agri-relay-poe-01.local`) / WebUI `POST /api/ota` / GitHub-release self-update.

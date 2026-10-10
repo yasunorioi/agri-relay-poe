@@ -56,16 +56,27 @@ S1/S2 は安全・仕様上の上限で、S4 の min-on 保持も上書きする
 
 ## ビルド / 書き込み
 
+リンク層は2つの env で切替（1ファームを共有）:
 ```
-pio run                       # ビルド（既定 = house3: agriha/3 / sensor）
-pio run -t upload             # 初回 USB-C（native USB CDC）
+# PoE / Ethernet 版（既定・ハウス内推奨）:
+pio run -e m5atoms3-poe -t upload
 
-# house2 機（CO2 が CCM ブリッジ経由 = agriha/2 / sensor_ccm、node=relay_poe_02）:
-PLATFORMIO_BUILD_FLAGS="-DHOUSE2" pio run -t upload
+# WiFi 版（AtomS3 内蔵 WiFi、W5500 不使用、USB-C/5V 給電、LAN ドロップが無い場所用）:
+pio run -e m5atoms3-wifi -t upload
+
+# house2 機（CO2 が CCM ブリッジ経由 = agriha/2 / sensor_ccm、node=relay_poe_02）は
+# どちらの env にも -DHOUSE2 を足す:
+PLATFORMIO_BUILD_FLAGS="-DHOUSE2" pio run -e m5atoms3-poe -t upload
 ```
+初回は USB-C（native USB CDC）。以降は Ethernet/WiFi 経由 OTA。
 > ⚠ 既定(setDefaults)を変えて焼くときは **NVS に残る旧設定が上書きする**ので、先に
-> `python -m esptool --port <port> erase_flash` してから `pio run -t upload`。最終的な
-> 各ノード設定は現地 LAN 上の WebUI `/config`（NVS 永続）で詰める。
+> `python -m esptool --port <port> erase_flash` してから upload。最終的な各ノード設定は
+> 現地 LAN 上の WebUI `/config`（NVS 永続）で詰める。
+
+### WiFi 版のプロビジョニング（m5atoms3-wifi）
+- WiFiManager が WiFi 資格情報と設定ポータルを管理。creds 未設定なら SoftAP **`agri-relay-setup`** が立つ → 接続して WiFi＋**MQTT host/port/prefix** を入力。以降は自動接続（ポータルはタイムアウトするのでオフラインでも制御は動く＝フェイルセーフ OFF）。
+- **ボタン(G41)を押しながら起動**で再プロビジョニング。詳細 src/しきい値は接続後に WebUI `/config` で。
+- ハウス内は EMI/長距離で無線が不安定寄り → **基本 PoE 優先、WiFi は代替**。
 - platform = pioarduino フォーク `#55.03.38`（arduino-esp32 3.x）、board = `m5stack-atoms3`、core = `agri-node-poe-core@v0.7.0`。
 - 以降は Ethernet 経由 ArduinoOTA（`agri-relay-poe-01.local`）/ WebUI `POST /api/ota` / GitHub Release セルフ更新（`yasunorioi/agri-relay-poe`、asset 名 `agri-relay-poe.bin`）。
 

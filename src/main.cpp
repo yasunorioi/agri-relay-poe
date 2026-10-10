@@ -26,6 +26,10 @@
 #include <AgriOTA.h>
 #include <AgriWebUI.h>
 #include <AgriProvisionAP.h>
+#ifdef NET_WIFI
+#include <WiFi.h>
+#include <WiFiManager.h>   // tzapu — WiFi creds + provisioning portal (WiFi build only)
+#endif
 
 #include "config.h"
 #include "led.h"
@@ -53,6 +57,13 @@ const char *FW_BIN_NAME = "agri-relay-poe.bin";
 #endif
 
 static const int PIN_BUTTON = 41;   // AtomS3 Lite onboard button (active LOW)
+
+// Link-layer abstraction: WiFi STA (WiFi build) vs W5500/ETH (default).
+#ifdef NET_WIFI
+static inline bool netUp() { return WiFi.status() == WL_CONNECTED; }
+#else
+static inline bool netUp() { return agri::networkUp(); }
+#endif
 
 // ---- globals declared extern in the headers --------------------------------
 AppConfig   g_cfg;
@@ -274,6 +285,48 @@ static bool buttonPoll() {
   return changed;
 }
 
+#ifdef NET_WIFI
+// WiFi bring-up (WiFi build). WiFiManager owns the WiFi credentials + the
+// provisioning portal; we piggy-back MQTT host/port/prefix as portal fields so
+// one portal visit configures everything. Normal boot (creds saved) never shows
+// the portal. The portal has a timeout so an unreachable AP never blocks the
+// controller forever — loop() then keeps retrying while control runs (fail-safe
+// OFF while offline). Hold the button (G41) at boot to force re-provisioning.
+static bool g_wm_should_save = false;
+static void wifiBegin() {
+  WiFiManager wm;
+  wm.setHostname(g_cfg.common.hostname);
+  wm.setConfigPortalTimeout(300);
+  wm.setSaveConfigCallback([](){ g_wm_should_save = true; });
+
+  char portStr[8]; snprintf(portStr, sizeof(portStr), "%u", g_cfg.common.mqtt_port);
+  WiFiManagerParameter p_host("mhost", "MQTT host (IP)", g_cfg.common.mqtt_host, 63);
+  WiFiManagerParameter p_port("mport", "MQTT port", portStr, 7);
+  WiFiManagerParameter p_pfx ("mpfx",  "MQTT prefix (e.g. agriha/2)",
+                              g_cfg.common.mqtt_topic_prefix, 63);
+  wm.addParameter(&p_host); wm.addParameter(&p_port); wm.addParameter(&p_pfx);
+
+  bool force = (digitalRead(PIN_BUTTON) == LOW);   // button held at boot
+  bool ok = force ? wm.startConfigPortal("agri-relay-setup")
+                  : wm.autoConnect("agri-relay-setup");
+
+  if (g_wm_should_save) {
+    strlcpy(g_cfg.common.mqtt_host, p_host.getValue(), sizeof(g_cfg.common.mqtt_host));
+    int port = atoi(p_port.getValue());
+    if (port > 0 && port < 65536) g_cfg.common.mqtt_port = (uint16_t)port;
+    strlcpy(g_cfg.common.mqtt_topic_prefix, p_pfx.getValue(),
+            sizeof(g_cfg.common.mqtt_topic_prefix));
+    saveConfig();           // (src prefix/category/type are refined later in /config)
+    Serial.printf("[WM] saved host=%s port=%u prefix=%s\n",
+                  g_cfg.common.mqtt_host, g_cfg.common.mqtt_port,
+                  g_cfg.common.mqtt_topic_prefix);
+  }
+  Serial.printf("[WiFi] %s ip=%s\n",
+                ok ? "connected" : "offline (portal timeout, will retry)",
+                WiFi.localIP().toString().c_str());
+}
+#endif  // NET_WIFI
+
 // ---- setup -----------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
@@ -290,10 +343,14 @@ void setup() {
                 g_cfg.src_prefix, g_cfg.src_category, g_cfg.input_type,
                 g_cfg.relay_pin, g_cfg.active_high ? "HIGH" : "LOW");
 
+#ifdef NET_WIFI
+  wifiBegin();
+#else
   agri::W5500Pins pins;
   pins.sck = W5500_SCK; pins.miso = W5500_MISO; pins.mosi = W5500_MOSI; pins.cs = W5500_CS;
   agri::Network::begin(g_cfg.common.hostname, pins);
   agri::Network::waitForLease();
+#endif
 
   configTime(0, 0, "ntp.nict.jp", "pool.ntp.org");   // SNTP for schedule + ts
 
@@ -312,7 +369,7 @@ void setup() {
   agri::mdnsBegin(g_cfg.common.hostname);
   agri::otaBegin(g_cfg.common.hostname);
   agri::OTA::begin(FW_REPO, FW_BIN_NAME, FW_VERSION);
-  agri::OTA::checkLatest();
+  if (netUp()) agri::OTA::checkLatest();
 
   Serial.printf("[BOOT] %s %s  mqtt=%s  ccm=%s\n", FW_NAME, FW_VERSION,
                 g_cfg.common.mqtt_host[0] ? g_cfg.common.mqtt_host : "(none)",
@@ -326,14 +383,26 @@ void loop() {
 
   agri::otaHandle();
   agri::OTA::poll();
-  agri::WebUI::handle(agri::Network::link_up, agri::Network::have_lease);
+  agri::WebUI::handle(netUp(), netUp());
+#ifndef NET_WIFI
+  // ETH build: raise a SoftAP serving the WebUI while there is no DHCP lease.
+  // WiFi build uses WiFiManager for provisioning instead, so skip this.
   agri::ProvisionAP::poll(agri::Network::have_lease, g_cfg.common.hostname);
+#endif
   bool btnChanged = buttonPoll();
 
   uint32_t now = millis();
 
+#ifdef NET_WIFI
+  // WiFi build: retry STA if the link dropped (creds live in esp_wifi NVS).
+  if (!netUp()) {
+    static uint32_t lastWifiTry = 0;
+    if (now - lastWifiTry > 10000) { lastWifiTry = now; WiFi.reconnect(); }
+  }
+#endif
+
   // MQTT keepalive / reconnect; (re)subscribe on the connect edge.
-  if (agri::networkUp() && agri::MQTT::hasHost(g_cfg.common)) {
+  if (netUp() && agri::MQTT::hasHost(g_cfg.common)) {
     if (!agri::MQTT::connected()) {
       if (now - lastMqttTryMs > 5000) { lastMqttTryMs = now; agri::MQTT::reconnect(g_cfg.common); }
     } else {
@@ -361,7 +430,7 @@ void loop() {
 
   // Status LED
   appled::State led;
-  if      (!agri::networkUp())                                            led = appled::NO_LINK;
+  if      (!netUp())                                                      led = appled::NO_LINK;
   else if (agri::MQTT::hasHost(g_cfg.common) && !agri::MQTT::connected())  led = appled::NO_MQTT;
   else if (g_relay)                                                       led = appled::ON;
   else if (g_cfg.mode == MODE_AUTO && !valFresh())                        led = appled::STALE;
