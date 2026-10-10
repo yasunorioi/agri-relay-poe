@@ -80,18 +80,28 @@ inline void setDefaults() {
   // a CO2 profile. The controlled variable is InAirCO2 on house3 (the CG-1000
   // house, native "sensor"); point src_* at another house / category / type to
   // retarget (e.g. house2 CO2 is CCM-bridged → "sensor_ccm").
-  agri::commonDefaults(g_cfg.common,
-                       "relay_poe_01", "agri-relay-poe-01",
-                       /*mqtt prefix = this house scope*/ "agriha/3",
+  // Per-node identity selected at build time. Default = house3 (native CO2 on
+  // "sensor"); build with -DHOUSE2 for house2 (CO2 reaches MQTT via the CCM
+  // bridge → "sensor_ccm"). Both drive a CG-1000 via the Unit Relay. Everything
+  // is still editable in /config; this just picks sensible first-boot defaults.
+#ifdef HOUSE2
+  const char *NID = "relay_poe_02", *NHOST = "agri-relay-poe-02";
+  const char *HPFX = "agriha/2", *SCAT = "sensor_ccm";
+#else
+  const char *NID = "relay_poe_01", *NHOST = "agri-relay-poe-01";
+  const char *HPFX = "agriha/3", *SCAT = "sensor";
+#endif
+  agri::commonDefaults(g_cfg.common, NID, NHOST,
+                       /*mqtt prefix = this house scope*/ HPFX,
                        /*default_ccm_region = 別棟 ArSprout region*/ 13);
 
   g_cfg.relay_pin   = 2;            // AtomS3 Grove yellow/SIG = Unit Relay DIN
   g_cfg.active_high = true;         // HIGH closes the relay → CG-1000 burner enable
-  strlcpy(g_cfg.relay_id, "co2", sizeof(g_cfg.relay_id));   // state → agriha/3/relay/co2
+  strlcpy(g_cfg.relay_id, "co2", sizeof(g_cfg.relay_id));   // state → <prefix>/relay/co2
 
-  strlcpy(g_cfg.src_prefix,   "agriha/3",  sizeof(g_cfg.src_prefix));
-  strlcpy(g_cfg.src_category, "sensor",    sizeof(g_cfg.src_category));
-  strlcpy(g_cfg.input_type,   "InAirCO2",  sizeof(g_cfg.input_type));
+  strlcpy(g_cfg.src_prefix,   HPFX,       sizeof(g_cfg.src_prefix));
+  strlcpy(g_cfg.src_category, SCAT,       sizeof(g_cfg.src_category));
+  strlcpy(g_cfg.input_type,   "InAirCO2", sizeof(g_cfg.input_type));
   g_cfg.src_stale_s = 180;          // CO2 stale → fail-safe OFF
 
   // DIR_RAISE: the relay RAISES CO2 (dosing). ON when CO2 <= on_point (low),

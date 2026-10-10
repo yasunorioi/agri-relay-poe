@@ -57,9 +57,15 @@ S1/S2 は安全・仕様上の上限で、S4 の min-on 保持も上書きする
 ## ビルド / 書き込み
 
 ```
-pio run                       # ビルド
+pio run                       # ビルド（既定 = house3: agriha/3 / sensor）
 pio run -t upload             # 初回 USB-C（native USB CDC）
+
+# house2 機（CO2 が CCM ブリッジ経由 = agriha/2 / sensor_ccm、node=relay_poe_02）:
+PLATFORMIO_BUILD_FLAGS="-DHOUSE2" pio run -t upload
 ```
+> ⚠ 既定(setDefaults)を変えて焼くときは **NVS に残る旧設定が上書きする**ので、先に
+> `python -m esptool --port <port> erase_flash` してから `pio run -t upload`。最終的な
+> 各ノード設定は現地 LAN 上の WebUI `/config`（NVS 永続）で詰める。
 - platform = pioarduino フォーク `#55.03.38`（arduino-esp32 3.x）、board = `m5stack-atoms3`、core = `agri-node-poe-core@v0.7.0`。
 - 以降は Ethernet 経由 ArduinoOTA（`agri-relay-poe-01.local`）/ WebUI `POST /api/ota` / GitHub Release セルフ更新（`yasunorioi/agri-relay-poe`、asset 名 `agri-relay-poe.bin`）。
 
