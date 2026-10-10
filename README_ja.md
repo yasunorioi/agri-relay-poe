@@ -1,6 +1,6 @@
 # agri-relay-poe
 
-**🇯🇵 日本語** ・ 🇬🇧 English (TODO)
+**🇯🇵 日本語** ・ 🇬🇧 [English](README_en.md)
 
 M5Stack **AtomS3 Lite** + **Atomic PoE Base（K139 / W5500）** + **Unit Relay（U002, 1ch SPDT）** による、agri-* ファミリーの**自律リレーノード**。
 
