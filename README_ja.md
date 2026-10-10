@@ -67,9 +67,27 @@ pio run -t upload             # 初回 USB-C（native USB CDC）
 
 Config ページ: 共通（MQTT / CCM エンベロープ）＋ Relay（モード・DINピン・active HIGH・relay_id）＋ 入力（prefix/category/type・stale）＋ ヒステリシス（向き・ON/OFF点）＋ ハード限界（hi/lo）＋ 時間窓 ＋ 外部ゲート ＋ dwell/duty/watchdog。全て NVS 永続（`relayp-cfg`）。Dashboard に ON/OFF バナー・モード・理由・入力値・ルールを表示。
 
-## 既定値（出荷時）
+## 既定値（出荷時 = CO2バーナー投入プロファイル）
 
-換気の例: 入力 `agriha/2/sensor/InAirTemp`、向き LOWER、ON=30℃/OFF=28℃、min on-off=30s、duty/watchdog なし、フェイルセーフ OFF、モード AUTO。用途に合わせ `/config` で自由に再ターゲット。
+初回デプロイ向けに、**agri-co2-burner の実績値を写した CO2 投入プロファイル**を既定とする（CG-1000 を Unit Relay で駆動する想定）。汎用ノードなので `/config` で自由に再ターゲット可。
+
+| 項目 | 既定 | 意味 |
+|---|---|---|
+| 入力 | `agriha/3/sensor/InAirCO2` | house3 の CO2（native=sensor）。house2 は CCM ブリッジ経由なので `sensor_ccm` に |
+| 向き | **RAISE** | CO2 を上げる＝ON when CO2 ≤ on_point |
+| ON / OFF | 450 / 520 ppm | CO2≤450 で投入、≥520 で停止 |
+| ハード限界 | **≥1000 ppm → OFF**（常時適用） | CG-1000 仕様。FORCE ON でも値が新鮮なら上書き |
+| 時間帯 | 08:00–15:00 | 日中のみ（光合成）。要調整 |
+| dwell | min on/off = 300s | 短サイクル防止 |
+| duty | 50% / 3600s 窓 | CG-1000 デューティ ≤50%/時 |
+| stale | 180s | CO2 が古い → フェイルセーフ OFF |
+| 状態 publish | `agriha/3/relay/co2` | retain |
+| モード | AUTO | **再起動時 FORCE_ON は AUTO に降格**（無人再起動で燃焼器を点けない安全） |
+| 窓ゲート | OFF | co2-burner は ArSprout HTTP で窓開を見て抑制。本機は MQTT `{value}/{pct}` トピックで代替可（既定 OFF、`gate_topic` に窓トピックを指定して有効化） |
+
+⚠ **既存 agri-co2-burner（WiFi）も house3 の CG-1000 を制御している**。CG-1000 を駆動するコントローラは**この PoE ノードか WiFi 版のどちらか一方**にすること（二重駆動しない）。
+
+別用途（ヒーター/換気/灌水 等）に使うときは `/config` で 入力・向き・ON/OFF点・限界・duty を変えるだけ。
 
 ## 関連
 

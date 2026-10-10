@@ -115,13 +115,22 @@ inline void controlTick(uint32_t now) {
   bool min_on_ok  = (now - g_relay_ms) >= (uint32_t)g_cfg.min_on_s  * 1000UL;
 
   // --- S1: hard safety OFF (overrides everything, incl. min-on hold) ---------
+  // FORCE OFF and the max-on watchdog are universal. HARD LIMITS apply whenever
+  // the input is fresh — even under FORCE ON — so forcing on can never push a
+  // combustion/CO2 load past its hard cap (CG-1000: CO2 < 1000 ppm). Only the
+  // input-STALE fail-safe is AUTO-only, so a manual FORCE ON still energizes a
+  // generic load / bench with no sensor present. FORCE ON stays bounded by the
+  // watchdog, hard limits, duty, and dwell.
   if (g_cfg.mode == MODE_FORCE_OFF) { g_reason = "manual FORCE OFF"; relayWrite(false); return; }
-  if (!valFresh())                  { g_reason = "input stale → fail-safe OFF"; relayWrite(false); return; }
-  if (g_cfg.hard_hi_en && g_val >= g_cfg.hard_hi) { g_reason = "hard-max limit → OFF"; relayWrite(false); return; }
-  if (g_cfg.hard_lo_en && g_val <= g_cfg.hard_lo) { g_reason = "hard-min limit → OFF"; relayWrite(false); return; }
   if (g_relay && g_cfg.max_on_s &&
       (now - g_relay_ms) >= (uint32_t)g_cfg.max_on_s * 1000UL) {
     g_reason = "max-on watchdog → OFF"; relayWrite(false); return;
+  }
+  if (valFresh()) {
+    if (g_cfg.hard_hi_en && g_val >= g_cfg.hard_hi) { g_reason = "hard-max limit → OFF"; relayWrite(false); return; }
+    if (g_cfg.hard_lo_en && g_val <= g_cfg.hard_lo) { g_reason = "hard-min limit → OFF"; relayWrite(false); return; }
+  } else if (g_cfg.mode == MODE_AUTO) {
+    g_reason = "input stale → fail-safe OFF"; relayWrite(false); return;
   }
 
   // --- S2: duty budget -------------------------------------------------------

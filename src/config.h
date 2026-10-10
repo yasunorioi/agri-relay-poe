@@ -74,42 +74,56 @@ struct AppConfig {
 extern AppConfig g_cfg;
 
 inline void setDefaults() {
+  // First-deployment profile = CO2-burner dosing (drive a Shizuoka Seiki CG-1000
+  // via the Unit Relay), mirroring the proven agri-co2-burner parameters. Fully
+  // re-targetable in /config — this is just a generic relay node that ships with
+  // a CO2 profile. The controlled variable is InAirCO2 on house3 (the CG-1000
+  // house, native "sensor"); point src_* at another house / category / type to
+  // retarget (e.g. house2 CO2 is CCM-bridged → "sensor_ccm").
   agri::commonDefaults(g_cfg.common,
                        "relay_poe_01", "agri-relay-poe-01",
-                       /*mqtt prefix = house scope*/ "agriha/2",
+                       /*mqtt prefix = this house scope*/ "agriha/3",
                        /*default_ccm_region = 別棟 ArSprout region*/ 13);
 
   g_cfg.relay_pin   = 2;            // AtomS3 Grove yellow/SIG = Unit Relay DIN
-  g_cfg.active_high = true;
-  strlcpy(g_cfg.relay_id, "1", sizeof(g_cfg.relay_id));
+  g_cfg.active_high = true;         // HIGH closes the relay → CG-1000 burner enable
+  strlcpy(g_cfg.relay_id, "co2", sizeof(g_cfg.relay_id));   // state → agriha/3/relay/co2
 
-  strlcpy(g_cfg.src_prefix,   "agriha/2",    sizeof(g_cfg.src_prefix));
-  strlcpy(g_cfg.src_category, "sensor",      sizeof(g_cfg.src_category));
-  strlcpy(g_cfg.input_type,   "InAirTemp",   sizeof(g_cfg.input_type));
-  g_cfg.src_stale_s = 120;
+  strlcpy(g_cfg.src_prefix,   "agriha/3",  sizeof(g_cfg.src_prefix));
+  strlcpy(g_cfg.src_category, "sensor",    sizeof(g_cfg.src_category));
+  strlcpy(g_cfg.input_type,   "InAirCO2",  sizeof(g_cfg.input_type));
+  g_cfg.src_stale_s = 180;          // CO2 stale → fail-safe OFF
 
-  g_cfg.dir       = DIR_LOWER;      // default: vent/cool example (ON when hot)
-  g_cfg.on_point  = 30.0f;          // ON  at v >= 30
-  g_cfg.off_point = 28.0f;          // OFF at v <= 28
+  // DIR_RAISE: the relay RAISES CO2 (dosing). ON when CO2 <= on_point (low),
+  // OFF when CO2 >= off_point. on_point(450) < off_point(520).
+  g_cfg.dir       = DIR_RAISE;
+  g_cfg.on_point  = 450.0f;
+  g_cfg.off_point = 520.0f;
 
-  g_cfg.hard_hi_en = false; g_cfg.hard_hi = 0.0f;
+  // CG-1000 spec: keep 庫内 CO2 <= 1000 ppm. Hard-max always wins (even FORCE ON).
+  g_cfg.hard_hi_en = true;  g_cfg.hard_hi = 1000.0f;
   g_cfg.hard_lo_en = false; g_cfg.hard_lo = 0.0f;
 
-  g_cfg.sched_enabled   = false;
-  g_cfg.sched_start_min = 0;
-  g_cfg.sched_end_min   = 0;
+  // Daytime-only dosing (photosynthesis). Adjust to the house's light window.
+  g_cfg.sched_enabled   = true;
+  g_cfg.sched_start_min = 8 * 60;   // 08:00
+  g_cfg.sched_end_min   = 15 * 60;  // 15:00
 
+  // Window-open gate: agri-co2-burner suppresses dosing when a side window is
+  // open (polls ArSprout). This generic node gates on an MQTT {value}/{pct}
+  // topic instead; left OFF by default (set gate_topic to a window topic to use).
   g_cfg.gate_enabled    = false;
   g_cfg.gate_topic[0]   = '\0';
-  g_cfg.gate_open_above = 0.0f;
-  g_cfg.gate_fail_open  = true;     // unknown gate => assume open (safe suppress)
+  g_cfg.gate_open_above = 5.0f;     // > 5 % open → suppress
+  g_cfg.gate_fail_open  = true;     // unknown → assume open (suppress), rely on schedule
   g_cfg.gate_stale_s    = 300;
 
-  g_cfg.min_on_s      = 30;
-  g_cfg.min_off_s     = 30;
-  g_cfg.duty_window_s = 0;          // no duty limit by default
-  g_cfg.duty_pct_max  = 100;
-  g_cfg.max_on_s      = 0;          // watchdog off by default
+  // Anti short-cycle + CG-1000 duty <= 50 %/hour.
+  g_cfg.min_on_s      = 300;        // 5 min
+  g_cfg.min_off_s     = 300;        // 5 min
+  g_cfg.duty_window_s = 3600;       // 1 h tumbling window
+  g_cfg.duty_pct_max  = 50;
+  g_cfg.max_on_s      = 0;          // watchdog off (duty governs); set if desired
 
   g_cfg.mode = MODE_AUTO;
 }
@@ -155,6 +169,10 @@ inline void loadConfig() {
   g_cfg.max_on_s      = p.getUShort("mxon", g_cfg.max_on_s);
 
   g_cfg.mode = p.getUChar("mode", g_cfg.mode);
+  // Burner safety: a persisted FORCE ON is downgraded to AUTO on boot, so an
+  // unattended power-cycle never energizes a combustion load on startup (same
+  // policy as agri-co2-burner). FORCE ON is a live operator action only.
+  if (g_cfg.mode == MODE_FORCE_ON) g_cfg.mode = MODE_AUTO;
   p.end();
 }
 
