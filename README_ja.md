@@ -69,6 +69,19 @@ PLATFORMIO_BUILD_FLAGS="-DHOUSE2" pio run -t upload
 - platform = pioarduino フォーク `#55.03.38`（arduino-esp32 3.x）、board = `m5stack-atoms3`、core = `agri-node-poe-core@v0.7.0`。
 - 以降は Ethernet 経由 ArduinoOTA（`agri-relay-poe-01.local`）/ WebUI `POST /api/ota` / GitHub Release セルフ更新（`yasunorioi/agri-relay-poe`、asset 名 `agri-relay-poe.bin`）。
 
+### リリース / セルフ更新(OTA)手順
+AgriOTA は起動時＋日次で `releases/latest` を見て、`agri-relay-poe.bin` を**ユーザのクリック時のみ**フラッシュ(WebUI の更新ボタン / `POST /api/update`)。新版の出し方:
+```
+# src/main.cpp の FW_VERSION を上げる（例 0.1.1）→ commit
+pio run                                        # 既定イメージ
+cp .pio/build/m5atoms3-poe/firmware.bin agri-relay-poe.bin
+gh release create v0.1.1 --target main --title v0.1.1 \
+  --notes "…" agri-relay-poe.bin
+```
+- タグは必ず `vX.Y.Z`、asset 名は厳密に `agri-relay-poe.bin`(違うと tag は見えても DL が 404)。
+- OTA イメージは1個の汎用ビルド(既定=house3)。**各ノードの house2/3 の別は NVS で保つ** — 現地で一度 WebUI `/config` を保存しておけば、OTA 更新しても設定は維持される(保存前に OTA すると既定の house3 に戻るので注意)。
+- OTA チェックは api.github.com への到達が必要(現地のインターネット回線)。
+
 ## 設定（WebUI `http://agri-relay-poe-01.local/` または DHCP IP）
 
 Config ページ: 共通（MQTT / CCM エンベロープ）＋ Relay（モード・DINピン・active HIGH・relay_id）＋ 入力（prefix/category/type・stale）＋ ヒステリシス（向き・ON/OFF点）＋ ハード限界（hi/lo）＋ 時間窓 ＋ 外部ゲート ＋ dwell/duty/watchdog。全て NVS 永続（`relayp-cfg`）。Dashboard に ON/OFF バナー・モード・理由・入力値・ルールを表示。
