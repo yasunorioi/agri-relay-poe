@@ -78,18 +78,20 @@ PLATFORMIO_BUILD_FLAGS="-DHOUSE2" pio run -e m5atoms3-poe -t upload
 - **ボタン(G41)を押しながら起動**で再プロビジョニング。詳細 src/しきい値は接続後に WebUI `/config` で。
 - ハウス内は EMI/長距離で無線が不安定寄り → **基本 PoE 優先、WiFi は代替**。
 - platform = pioarduino フォーク `#55.03.38`（arduino-esp32 3.x）、board = `m5stack-atoms3`、core = `agri-node-poe-core@v0.7.0`。
-- 以降は Ethernet 経由 ArduinoOTA（`agri-relay-poe-01.local`）/ WebUI `POST /api/ota` / GitHub Release セルフ更新（`yasunorioi/agri-relay-poe`、asset 名 `agri-relay-poe.bin`）。
+- 以降は Ethernet 経由 ArduinoOTA（`agri-relay-poe-01.local`）/ WebUI `POST /api/ota` / GitHub Release セルフ更新（`yasunorioi/agri-relay-poe`、asset 名は PoE 版 `agri-relay-poeco2.bin` / WiFi 版 `agri-relay-wifico2.bin`）。
 
 ### リリース / セルフ更新(OTA)手順
-AgriOTA は起動時＋日次で `releases/latest` を見て、`agri-relay-poe.bin` を**ユーザのクリック時のみ**フラッシュ(WebUI の更新ボタン / `POST /api/update`)。新版の出し方:
+AgriOTA は起動時＋日次で `releases/latest` を見て、ビルドごとの asset（PoE=`agri-relay-poeco2.bin` / WiFi=`agri-relay-wifico2.bin`）を**ユーザのクリック時のみ**フラッシュ(WebUI の更新ボタン / `POST /api/update`)。新版の出し方:
 ```
-# src/main.cpp の FW_VERSION を上げる（例 0.1.1）→ commit
-pio run                                        # 既定イメージ
-cp .pio/build/m5atoms3-poe/firmware.bin agri-relay-poe.bin
-gh release create v0.1.1 --target main --title v0.1.1 \
-  --notes "…" agri-relay-poe.bin
+# src/main.cpp の FW_VERSION を上げる（例 0.1.2）→ commit
+pio run -e m5atoms3-poe -e m5atoms3-wifi
+cp .pio/build/m5atoms3-poe/firmware.bin  agri-relay-poeco2.bin
+cp .pio/build/m5atoms3-wifi/firmware.bin agri-relay-wifico2.bin
+gh release create v0.1.2 --target main --title v0.1.2 \
+  --notes "…" agri-relay-poeco2.bin agri-relay-wifico2.bin
 ```
-- タグは必ず `vX.Y.Z`、asset 名は厳密に `agri-relay-poe.bin`(違うと tag は見えても DL が 404)。
+- タグは必ず `vX.Y.Z`、asset 名は厳密に上の2つ(違うと tag は見えても DL が 404)。**両方必ず添付** — 片方欠けるとそのビルドの機体は更新できない。
+- v0.1.1 以前は両ビルドとも `agri-relay-poe.bin`(=PoE 版)を取りに行く。v0.1.1 以前の **WiFi 機は更新ボタンを押さず**、`agri-relay-wifico2.bin` を `POST /api/ota` で入れること(PoE 版が入るとネットワークを失う)。
 - OTA イメージは1個の汎用ビルド(既定=house3)。**各ノードの house2/3 の別は NVS で保つ** — 現地で一度 WebUI `/config` を保存しておけば、OTA 更新しても設定は維持される(保存前に OTA すると既定の house3 に戻るので注意)。
 - OTA チェックは api.github.com への到達が必要(現地のインターネット回線)。
 

@@ -75,14 +75,16 @@ First flash over USB-C (native USB CDC); later flashes over Ethernet/WiFi OTA.
 - Later flashes over Ethernet via ArduinoOTA (`agri-relay-poe-01.local`) / WebUI `POST /api/ota` / GitHub-release self-update.
 
 ### Release / self-update (OTA)
-AgriOTA polls `releases/latest` at boot and daily, and flashes `agri-relay-poe.bin` **only on a user click** (WebUI Update button / `POST /api/update`). To cut a new version:
+AgriOTA polls `releases/latest` at boot and daily, and flashes the per-build asset (PoE `agri-relay-poeco2.bin` / WiFi `agri-relay-wifico2.bin`) **only on a user click** (WebUI Update button / `POST /api/update`). To cut a new version:
 ```
-# bump FW_VERSION in src/main.cpp (e.g. 0.1.1) → commit
-pio run
-cp .pio/build/m5atoms3-poe/firmware.bin agri-relay-poe.bin
-gh release create v0.1.1 --target main --title v0.1.1 --notes "…" agri-relay-poe.bin
+# bump FW_VERSION in src/main.cpp (e.g. 0.1.2) → commit
+pio run -e m5atoms3-poe -e m5atoms3-wifi
+cp .pio/build/m5atoms3-poe/firmware.bin  agri-relay-poeco2.bin
+cp .pio/build/m5atoms3-wifi/firmware.bin agri-relay-wifico2.bin
+gh release create v0.1.2 --target main --title v0.1.2 --notes "…" agri-relay-poeco2.bin agri-relay-wifico2.bin
 ```
-- Tag must be `vX.Y.Z`; the asset must be named exactly `agri-relay-poe.bin` (otherwise the tag is found but the download 404s).
+- Tag must be `vX.Y.Z`; assets must be named exactly as above (otherwise the tag is found but the download 404s). **Attach both** — a missing one leaves that build's nodes unable to update.
+- v0.1.1 and earlier fetch `agri-relay-poe.bin` (= the PoE image) from either build. On a pre-0.1.2 **WiFi node, do not press Update**; push `agri-relay-wifico2.bin` via `POST /api/ota` instead (the PoE image would take it offline).
 - The OTA image is a single generic build (default = house3). **Each node's house2/3 identity lives in NVS** — save `/config` once on the greenhouse LAN and OTA preserves it (OTA before saving reverts to the house3 default).
 - The OTA check needs reachability to api.github.com (the site's internet link).
 

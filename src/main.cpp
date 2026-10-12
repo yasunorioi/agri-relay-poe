@@ -37,9 +37,15 @@
 #include "control.h"
 
 const char *FW_NAME     = "agri-relay-poe";
-const char *FW_VERSION  = "0.1.1";
+const char *FW_VERSION  = "0.1.2";
 const char *FW_REPO     = "yasunorioi/agri-relay-poe";
-const char *FW_BIN_NAME = "agri-relay-poe.bin";
+// Release asset fetched by AgriOTA — one per build so a node never pulls the
+// other link layer's image (WiFi ↔ W5500) and loses its network.
+#ifdef NET_WIFI
+const char *FW_BIN_NAME = "agri-relay-wifico2.bin";
+#else
+const char *FW_BIN_NAME = "agri-relay-poeco2.bin";
+#endif
 
 // W5500 pins on the Atomic PoE Base for AtomS3 (see agri-temp-poe); overridable
 // via build_flags, fallbacks keep this file self-contained.
@@ -379,7 +385,6 @@ void setup() {
 // ---- loop ------------------------------------------------------------------
 void loop() {
   static uint32_t lastMqttTryMs = 0, lastCtrlMs = 0, lastPubMs = 0;
-  static bool     wasConnected = false;
 
   agri::otaHandle();
   agri::OTA::poll();
@@ -401,20 +406,21 @@ void loop() {
   }
 #endif
 
-  // MQTT keepalive / reconnect; (re)subscribe on the connect edge.
-  // The edge must be detected *before* wasConnected is refreshed: a successful
-  // reconnect() in this pass would otherwise set wasConnected=true at the end of
-  // the same pass, and the next pass would never see !wasConnected → no SUBSCRIBE.
+  // MQTT keepalive / reconnect; (re)subscribe on every successful reconnect.
+  // Keyed on reconnect()'s result, not a was/is-connected comparison: /config
+  // save disconnects inside WebUI::handle() and the reconnect can complete in
+  // the same pass, so a state edge would be invisible and the new (clean)
+  // session would carry no subscriptions.
   if (netUp() && agri::MQTT::hasHost(g_cfg.common)) {
     if (!agri::MQTT::connected()) {
-      if (now - lastMqttTryMs > 5000) { lastMqttTryMs = now; agri::MQTT::reconnect(g_cfg.common); }
-    }
-    if (agri::MQTT::connected()) {
-      if (!wasConnected) { sourcesSubscribe(); publishState(); }
+      if (now - lastMqttTryMs > 5000) {
+        lastMqttTryMs = now;
+        if (agri::MQTT::reconnect(g_cfg.common)) { sourcesSubscribe(); publishState(); }
+      }
+    } else {
       agri::MQTT::loop();
     }
   }
-  wasConnected = agri::MQTT::connected();
 
   if (g_cfg.common.ccm_enabled) sourcesCcmPoll();
 
