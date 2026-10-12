@@ -37,7 +37,7 @@
 #include "control.h"
 
 const char *FW_NAME     = "agri-relay-poe";
-const char *FW_VERSION  = "0.1.0";
+const char *FW_VERSION  = "0.1.1";
 const char *FW_REPO     = "yasunorioi/agri-relay-poe";
 const char *FW_BIN_NAME = "agri-relay-poe.bin";
 
@@ -402,10 +402,14 @@ void loop() {
 #endif
 
   // MQTT keepalive / reconnect; (re)subscribe on the connect edge.
+  // The edge must be detected *before* wasConnected is refreshed: a successful
+  // reconnect() in this pass would otherwise set wasConnected=true at the end of
+  // the same pass, and the next pass would never see !wasConnected → no SUBSCRIBE.
   if (netUp() && agri::MQTT::hasHost(g_cfg.common)) {
     if (!agri::MQTT::connected()) {
       if (now - lastMqttTryMs > 5000) { lastMqttTryMs = now; agri::MQTT::reconnect(g_cfg.common); }
-    } else {
+    }
+    if (agri::MQTT::connected()) {
       if (!wasConnected) { sourcesSubscribe(); publishState(); }
       agri::MQTT::loop();
     }
