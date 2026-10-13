@@ -37,7 +37,7 @@
 #include "control.h"
 
 const char *FW_NAME     = "agri-relay-poe";
-const char *FW_VERSION  = "0.1.2";
+const char *FW_VERSION  = "0.1.3";
 const char *FW_REPO     = "yasunorioi/agri-relay-poe";
 // Release asset fetched by AgriOTA — one per build so a node never pulls the
 // other link layer's image (WiFi ↔ W5500) and loses its network.
@@ -358,7 +358,7 @@ void setup() {
   agri::Network::waitForLease();
 #endif
 
-  configTime(0, 0, "ntp.nict.jp", "pool.ntp.org");   // SNTP for schedule + ts
+  configTzTime("JST-9", "ntp.nict.jp", "pool.ntp.org");   // SNTP; schedule is local (JST)
 
   agri::MQTT::begin();
   sourcesBegin();
